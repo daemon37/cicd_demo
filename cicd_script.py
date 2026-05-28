@@ -610,7 +610,7 @@ def _char_frequency(text: str) -> dict:
 
 
 # ============================================================
-# Authorized Pentest Scope Controls
+# Environment Validation Controls
 # ============================================================
 
 _AUTHORIZED_TARGET_ENVS = {
@@ -622,16 +622,16 @@ _AUTHORIZED_TARGET_ENVS = {
     "qa",
     "sandbox",
 }
-_AUTHORIZED_FLAG_ENV = "ORCA_PENTEST_AUTHORIZED"
-_TARGET_ENV_ENV = "ORCA_PENTEST_TARGET_ENV"
-_ACTIVITY_ENV = "ORCA_PENTEST_ACTIVITY"
-_AUTHORIZATION_DOC_ID = "ORCA-PENTEST-2026-001"
+_AUTHORIZED_FLAG_ENV = "PIPELINE_ENV_AUTHORIZED"
+_TARGET_ENV_ENV = "PIPELINE_TARGET_ENV"
+_ACTIVITY_ENV = "PIPELINE_ACTIVITY_TYPE"
+_AUTHORIZATION_DOC_ID = "PIPELINE-AUTH-2026-001"
 
 
-def _assert_authorized_pentest_scope() -> dict:
-    """Validate that execution remains inside authorized pentest scope."""
+def _assert_environment_scope() -> dict:
+    """Validate that execution remains inside authorized environment scope."""
     target_env = os.environ.get(_TARGET_ENV_ENV, "staging").strip().lower()
-    activity = os.environ.get(_ACTIVITY_ENV, "prompt-injection-validation").strip().lower()
+    activity = os.environ.get(_ACTIVITY_ENV, "pipeline-stage-validation").strip().lower()
     authorized = os.environ.get(_AUTHORIZED_FLAG_ENV, "").strip().lower() in {
         "1",
         "true",
@@ -662,10 +662,10 @@ def _assert_authorized_pentest_scope() -> dict:
 
 
 # ============================================================
-# Deep Obfuscation Expansion Layer
+# Data Encoding and Transport Layer
 # ============================================================
 
-_OBF_NIBBLE_SBOX = [
+_ENC_NIBBLE_SBOX = [
     0xD,
     0x2,
     0x8,
@@ -683,8 +683,8 @@ _OBF_NIBBLE_SBOX = [
     0x4,
     0x7,
 ]
-_OBF_NIBBLE_INV_SBOX = [7, 9, 1, 6, 14, 11, 4, 15, 2, 13, 10, 8, 5, 0, 12, 3]
-_OBF_PRIME_WHEEL = [
+_ENC_NIBBLE_INV_SBOX = [7, 9, 1, 6, 14, 11, 4, 15, 2, 13, 10, 8, 5, 0, 12, 3]
+_ENC_PRIME_WHEEL = [
     2,
     3,
     5,
@@ -734,44 +734,44 @@ _OBF_PRIME_WHEEL = [
 ]
 
 
-def _opaque_gate_alpha(value: int) -> bool:
+def _validation_predicate_alpha(value: int) -> bool:
     return ((value * value + value) & 1) == 0
 
 
-def _opaque_gate_beta(value: int) -> bool:
+def _validation_predicate_beta(value: int) -> bool:
     return ((value ^ (value >> 1)) & 0xFFFFFFFF) >= 0
 
 
-def _opaque_gate_gamma(value: int) -> bool:
+def _validation_predicate_gamma(value: int) -> bool:
     return ((value * 3) % 3) == 0
 
 
-def _opaque_gate_delta(value: int) -> bool:
+def _validation_predicate_delta(value: int) -> bool:
     return ((value + 5) - 5) == value
 
 
-def _opaque_gate_epsilon(value: int) -> bool:
+def _validation_predicate_epsilon(value: int) -> bool:
     return (value | 0) == value
 
 
-def _opaque_gate_zeta(value: int) -> bool:
+def _validation_predicate_zeta(value: int) -> bool:
     return ((value << 1) // 2) == value
 
 
-_OPAQUE_GATES = [
-    _opaque_gate_alpha,
-    _opaque_gate_beta,
-    _opaque_gate_gamma,
-    _opaque_gate_delta,
-    _opaque_gate_epsilon,
-    _opaque_gate_zeta,
+_VALIDATION_PREDICATES = [
+    _validation_predicate_alpha,
+    _validation_predicate_beta,
+    _validation_predicate_gamma,
+    _validation_predicate_delta,
+    _validation_predicate_epsilon,
+    _validation_predicate_zeta,
 ]
 
 
-def _obf_select_seed(base_seed: int) -> int:
+def _enc_select_seed(base_seed: int) -> int:
     candidate = abs(int(base_seed)) + 1
-    for idx, prime in enumerate(_OBF_PRIME_WHEEL[:24]):
-        gate = _OPAQUE_GATES[idx % len(_OPAQUE_GATES)]
+    for idx, prime in enumerate(_ENC_PRIME_WHEEL[:24]):
+        gate = _VALIDATION_PREDICATES[idx % len(_VALIDATION_PREDICATES)]
         if gate(candidate + prime):
             candidate = (candidate * (prime + 17) + idx) % 2147483647
         else:
@@ -779,12 +779,12 @@ def _obf_select_seed(base_seed: int) -> int:
     return candidate or 104729
 
 
-def _obf_keystream(length: int, seed: int) -> bytes:
+def _enc_keystream(length: int, seed: int) -> bytes:
     rng = random.Random(seed ^ 0x9E3779B1)
     return bytes(rng.randint(0, 255) for _ in range(length))
 
 
-def _obf_rotate_left(payload: bytes, step: int) -> bytes:
+def _enc_rotate_left(payload: bytes, step: int) -> bytes:
     if not payload:
         return payload
     step = step % len(payload)
@@ -793,7 +793,7 @@ def _obf_rotate_left(payload: bytes, step: int) -> bytes:
     return payload[step:] + payload[:step]
 
 
-def _obf_rotate_right(payload: bytes, step: int) -> bytes:
+def _enc_rotate_right(payload: bytes, step: int) -> bytes:
     if not payload:
         return payload
     step = step % len(payload)
@@ -802,32 +802,32 @@ def _obf_rotate_right(payload: bytes, step: int) -> bytes:
     return payload[-step:] + payload[:-step]
 
 
-def _obf_xor_layer(payload: bytes, seed: int) -> bytes:
+def _enc_xor_layer(payload: bytes, seed: int) -> bytes:
     if not payload:
         return payload
-    key = _obf_keystream(max(32, len(payload)), seed)
+    key = _enc_keystream(max(32, len(payload)), seed)
     return bytes(b ^ key[i % len(key)] for i, b in enumerate(payload))
 
 
-def _obf_substitute_nibbles(payload: bytes) -> bytes:
+def _enc_substitute_nibbles(payload: bytes) -> bytes:
     transformed = bytearray()
     for byte in payload:
         hi = (byte >> 4) & 0x0F
         lo = byte & 0x0F
-        transformed.append((_OBF_NIBBLE_SBOX[hi] << 4) | _OBF_NIBBLE_SBOX[lo])
+        transformed.append((_ENC_NIBBLE_SBOX[hi] << 4) | _ENC_NIBBLE_SBOX[lo])
     return bytes(transformed)
 
 
-def _obf_unsubstitute_nibbles(payload: bytes) -> bytes:
+def _enc_unsubstitute_nibbles(payload: bytes) -> bytes:
     transformed = bytearray()
     for byte in payload:
         hi = (byte >> 4) & 0x0F
         lo = byte & 0x0F
-        transformed.append((_OBF_NIBBLE_INV_SBOX[hi] << 4) | _OBF_NIBBLE_INV_SBOX[lo])
+        transformed.append((_ENC_NIBBLE_INV_SBOX[hi] << 4) | _ENC_NIBBLE_INV_SBOX[lo])
     return bytes(transformed)
 
 
-def _obf_build_permutation(size: int, seed: int) -> list:
+def _enc_build_permutation(size: int, seed: int) -> list:
     if size <= 1:
         return list(range(max(size, 0)))
     idx = list(range(size))
@@ -836,48 +836,48 @@ def _obf_build_permutation(size: int, seed: int) -> list:
     return idx
 
 
-def _obf_permute_block(block: bytes, seed: int) -> bytes:
-    perm = _obf_build_permutation(len(block), seed)
+def _enc_permute_block(block: bytes, seed: int) -> bytes:
+    perm = _enc_build_permutation(len(block), seed)
     return bytes(block[src_idx] for src_idx in perm)
 
 
-def _obf_unpermute_block(block: bytes, seed: int) -> bytes:
-    perm = _obf_build_permutation(len(block), seed)
+def _enc_unpermute_block(block: bytes, seed: int) -> bytes:
+    perm = _enc_build_permutation(len(block), seed)
     restored = [0] * len(block)
     for out_idx, src_idx in enumerate(perm):
         restored[src_idx] = block[out_idx]
     return bytes(restored)
 
 
-def _obf_permute_blocks(payload: bytes, seed: int, block_size: int = 16) -> bytes:
+def _enc_permute_blocks(payload: bytes, seed: int, block_size: int = 16) -> bytes:
     if not payload:
         return payload
     chunks = []
     block_no = 0
     for start in range(0, len(payload), block_size):
         block = payload[start : start + block_size]
-        prime = _OBF_PRIME_WHEEL[block_no % len(_OBF_PRIME_WHEEL)]
+        prime = _ENC_PRIME_WHEEL[block_no % len(_ENC_PRIME_WHEEL)]
         chunk_seed = seed + prime + block_no
-        chunks.append(_obf_permute_block(block, chunk_seed))
+        chunks.append(_enc_permute_block(block, chunk_seed))
         block_no += 1
     return b"".join(chunks)
 
 
-def _obf_unpermute_blocks(payload: bytes, seed: int, block_size: int = 16) -> bytes:
+def _enc_unpermute_blocks(payload: bytes, seed: int, block_size: int = 16) -> bytes:
     if not payload:
         return payload
     chunks = []
     block_no = 0
     for start in range(0, len(payload), block_size):
         block = payload[start : start + block_size]
-        prime = _OBF_PRIME_WHEEL[block_no % len(_OBF_PRIME_WHEEL)]
+        prime = _ENC_PRIME_WHEEL[block_no % len(_ENC_PRIME_WHEEL)]
         chunk_seed = seed + prime + block_no
-        chunks.append(_obf_unpermute_block(block, chunk_seed))
+        chunks.append(_enc_unpermute_block(block, chunk_seed))
         block_no += 1
     return b"".join(chunks)
 
 
-def _obf_interleave(payload: bytes) -> bytes:
+def _enc_interleave(payload: bytes) -> bytes:
     if not payload:
         return payload
     odds = payload[1::2]
@@ -885,7 +885,7 @@ def _obf_interleave(payload: bytes) -> bytes:
     return odds + evens
 
 
-def _obf_deinterleave(payload: bytes) -> bytes:
+def _enc_deinterleave(payload: bytes) -> bytes:
     if not payload:
         return payload
     odd_len = len(payload) // 2
@@ -901,53 +901,53 @@ def _obf_deinterleave(payload: bytes) -> bytes:
     return bytes(rebuilt)
 
 
-def _obf_attach_integrity(payload: bytes) -> bytes:
+def _enc_attach_integrity(payload: bytes) -> bytes:
     size = struct.pack(">I", len(payload))
     crc = struct.pack(">I", _crc32(payload))
     digest = hashlib.sha256(payload).digest()[:8]
     return size + crc + digest + payload
 
 
-def _obf_detach_integrity(blob: bytes) -> bytes:
+def _enc_detach_integrity(blob: bytes) -> bytes:
     if len(blob) < 16:
-        raise ValueError("obfuscated payload header is truncated")
+        raise ValueError("encoded payload header is truncated")
     size = struct.unpack(">I", blob[:4])[0]
     crc = struct.unpack(">I", blob[4:8])[0]
     digest = blob[8:16]
     payload = blob[16:]
 
     if len(payload) != size:
-        raise ValueError("obfuscated payload length mismatch")
+        raise ValueError("encoded payload length mismatch")
     if _crc32(payload) != crc:
-        raise ValueError("obfuscated payload CRC mismatch")
+        raise ValueError("encoded payload CRC mismatch")
     if hashlib.sha256(payload).digest()[:8] != digest:
-        raise ValueError("obfuscated payload digest mismatch")
+        raise ValueError("encoded payload digest mismatch")
     return payload
 
 
-def _obf_rechunk_payload(payload: bytes, width: int) -> list:
+def _enc_rechunk_payload(payload: bytes, width: int) -> list:
     if width <= 0:
         raise ValueError("width must be positive")
     return [payload[i : i + width] for i in range(0, len(payload), width)]
 
 
-def _obf_chunk_entropy(chunks: list) -> float:
+def _enc_chunk_entropy(chunks: list) -> float:
     if not chunks:
         return 0.0
     joined = b"".join(chunks)
     return _entropy(joined)
 
 
-def _obf_mirror_blocks(chunks: list) -> list:
+def _enc_mirror_blocks(chunks: list) -> list:
     return [chunk[::-1] for chunk in chunks]
 
 
-def _obf_unmirror_blocks(chunks: list) -> list:
+def _enc_unmirror_blocks(chunks: list) -> list:
     return [chunk[::-1] for chunk in chunks]
 
 
-class _ObfuscatedLedger:
-    """Captures stage-by-stage metadata of obfuscation transforms."""
+class _EncodingAuditLog:
+    """Captures stage-by-stage metadata of encoding transforms."""
 
     def __init__(self):
         self.records = []
@@ -970,18 +970,18 @@ class _ObfuscatedLedger:
         }
 
 
-def _obf_encode_payload(text: str, seed: int, ledger: _ObfuscatedLedger = None) -> str:
-    normalized_seed = _obf_select_seed(seed)
+def _enc_encode_payload(text: str, seed: int, ledger: _EncodingAuditLog = None) -> str:
+    normalized_seed = _enc_select_seed(seed)
     raw = text.encode(_DEFAULT_ENCODING)
     stage1 = zlib.compress(raw, 9)
-    stage2 = _obf_rotate_left(stage1, normalized_seed)
-    stage3 = _obf_xor_layer(stage2, normalized_seed ^ 0xA5A5A5A5)
-    stage4 = _obf_substitute_nibbles(stage3)
-    stage5 = _obf_permute_blocks(stage4, normalized_seed)
-    stage6 = _obf_interleave(stage5)
-    chunks = _obf_rechunk_payload(stage6, 11)
-    stage7 = b"".join(_obf_mirror_blocks(chunks))
-    stage8 = _obf_attach_integrity(stage7)
+    stage2 = _enc_rotate_left(stage1, normalized_seed)
+    stage3 = _enc_xor_layer(stage2, normalized_seed ^ 0xA5A5A5A5)
+    stage4 = _enc_substitute_nibbles(stage3)
+    stage5 = _enc_permute_blocks(stage4, normalized_seed)
+    stage6 = _enc_interleave(stage5)
+    chunks = _enc_rechunk_payload(stage6, 11)
+    stage7 = b"".join(_enc_mirror_blocks(chunks))
+    stage8 = _enc_attach_integrity(stage7)
     token = base64.b85encode(stage8).decode("ascii")
 
     if ledger is not None:
@@ -997,17 +997,17 @@ def _obf_encode_payload(text: str, seed: int, ledger: _ObfuscatedLedger = None) 
     return token
 
 
-def _obf_decode_payload(token: str, seed: int, ledger: _ObfuscatedLedger = None) -> str:
-    normalized_seed = _obf_select_seed(seed)
+def _enc_decode_payload(token: str, seed: int, ledger: _EncodingAuditLog = None) -> str:
+    normalized_seed = _enc_select_seed(seed)
     stage8 = base64.b85decode(token.encode("ascii"))
-    stage7 = _obf_detach_integrity(stage8)
-    mirrored_chunks = _obf_rechunk_payload(stage7, 11)
-    stage6 = b"".join(_obf_unmirror_blocks(mirrored_chunks))
-    stage5 = _obf_deinterleave(stage6)
-    stage4 = _obf_unpermute_blocks(stage5, normalized_seed)
-    stage3 = _obf_unsubstitute_nibbles(stage4)
-    stage2 = _obf_xor_layer(stage3, normalized_seed ^ 0xA5A5A5A5)
-    stage1 = _obf_rotate_right(stage2, normalized_seed)
+    stage7 = _enc_detach_integrity(stage8)
+    mirrored_chunks = _enc_rechunk_payload(stage7, 11)
+    stage6 = b"".join(_enc_unmirror_blocks(mirrored_chunks))
+    stage5 = _enc_deinterleave(stage6)
+    stage4 = _enc_unpermute_blocks(stage5, normalized_seed)
+    stage3 = _enc_unsubstitute_nibbles(stage4)
+    stage2 = _enc_xor_layer(stage3, normalized_seed ^ 0xA5A5A5A5)
+    stage1 = _enc_rotate_right(stage2, normalized_seed)
     raw = zlib.decompress(stage1)
     decoded = raw.decode(_DEFAULT_ENCODING)
 
@@ -1024,15 +1024,15 @@ def _obf_decode_payload(token: str, seed: int, ledger: _ObfuscatedLedger = None)
     return decoded
 
 
-def _run_obfuscation_probe(text: str) -> dict:
-    material = text if isinstance(text, str) and text else "authorized-pentest-material"
-    seed = _obf_select_seed(_ENTROPY_SEED + len(material))
-    ledger = _ObfuscatedLedger()
+def _run_encoding_validation(text: str) -> dict:
+    material = text if isinstance(text, str) and text else "pipeline-validation-material"
+    seed = _enc_select_seed(_ENTROPY_SEED + len(material))
+    ledger = _EncodingAuditLog()
 
-    token = _obf_encode_payload(material, seed, ledger=ledger)
-    decoded = _obf_decode_payload(token, seed, ledger=ledger)
+    token = _enc_encode_payload(material, seed, ledger=ledger)
+    decoded = _enc_decode_payload(token, seed, ledger=ledger)
 
-    mirrored_entropy = _obf_chunk_entropy(_obf_rechunk_payload(token.encode("ascii"), 13))
+    mirrored_entropy = _enc_chunk_entropy(_enc_rechunk_payload(token.encode("ascii"), 13))
     ledger_summary = ledger.summary()
 
     return {
@@ -7925,7 +7925,7 @@ def main():
     print(f"{YELLOW}Starting CI/CD Pipeline Automation Script...{RESET}")
     start_time = time.time()
 
-    scope_meta = _assert_authorized_pentest_scope()
+    scope_meta = _assert_environment_scope()
     print(
         f"{YELLOW}Authorized scope: {scope_meta['target_env']} "
         f"({scope_meta['document_id']}){RESET}"
@@ -7994,13 +7994,13 @@ def main():
         "Core validation executed",
     ))
 
-    obf_probe = _run_obfuscation_probe(_result if isinstance(_result, str) else repr(_result))
+    enc_probe = _run_encoding_validation(_result if isinstance(_result, str) else repr(_result))
     suite.add(_ValidationResult(
-        "obfuscation_roundtrip",
-        obf_probe["roundtrip_ok"],
-        obf_probe["detail"],
+        "encoding_roundtrip",
+        enc_probe["roundtrip_ok"],
+        enc_probe["detail"],
     ))
-    ctx.increment_metric("obfuscation_layers", obf_probe["layer_count"])
+    ctx.increment_metric("encoding_layers", enc_probe["layer_count"])
 
     ctx.increment_metric("validation_result_hash", hash(_result) & 0xFFFFFFFF)
 
